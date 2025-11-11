@@ -163,7 +163,7 @@ def build_ui():
                     <p class="astro-sub">Video generation and more features coming up..!</p>
                     <p class="astro-link">
                         <a href="https://github.com/KSV2001/astro_diffusion" target="_blank" rel="noreferrer noopener">
-                            GitHub repo: KSV2001/astro_diffusion
+                            Visit Srivatsava's GitHub repo
                         </a>
                     </p>
                 </div>
