@@ -4,7 +4,8 @@ import gradio as gr
 from requests.exceptions import ConnectionError, Timeout, HTTPError
 
 # frontend-only: call your backend (RunPod/pod/etc.)
-BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:7861")
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:7861").rstrip("/")
+print(f"[HF] BACKEND_URL resolved to: {BACKEND_URL}")
 
 # cfg = yaml.safe_load(open("configs/infer.yaml"))
 # default UI values if no YAML
