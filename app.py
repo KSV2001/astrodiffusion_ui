@@ -51,7 +51,7 @@ def _infer(p, st, sc, h, w, sd, et):
         "eta": float(et),
     }
     try:
-        r = requests.post(BACKEND_URL, json=payload, timeout=120)
+        r = requests.post(f"{BACKEND_URL}/infer", json=payload, timeout=120)
         if r.status_code == 429:
             blank = Image.new("RGB", (w, h), (30, 30, 30))
             msg = r.json().get("error", "rate limited by backend")
