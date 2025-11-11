@@ -7,8 +7,6 @@ from requests.exceptions import ConnectionError, Timeout, HTTPError
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:7861").rstrip("/")
 print(f"[HF] BACKEND_URL resolved to: {BACKEND_URL}")
 
-# cfg = yaml.safe_load(open("configs/infer.yaml"))
-
 # sample prompts
 SAMPLE_PROMPTS = [
     "a high-resolution spiral galaxy with blue star-forming arms and a bright yellow core",
@@ -17,7 +15,6 @@ SAMPLE_PROMPTS = [
     "an accretion disk around a black hole with relativistic jets, high contrast",
 ]
 
-
 # default UI values if no YAML
 cfg = {
     "height": 512,
@@ -25,8 +22,9 @@ cfg = {
     "num_inference_steps": 30,
     "guidance_scale": 7.5,
     "seed": 1234,
-    "eta" : 0,
+    "eta": 0,
 }
+
 
 # ---- health check ----
 def check_backend():
@@ -46,7 +44,7 @@ def b64_to_img(s: str):
     return Image.open(io.BytesIO(data)).convert("RGB")
 
 
-def _infer(p, st, sc, h, w, sd, et):
+def _infer(p, st, sc, h, w, sd, et, session_id):
     # make sure we always have ints for blank images
     h = int(h)
     w = int(w)
@@ -60,41 +58,52 @@ def _infer(p, st, sc, h, w, sd, et):
         "seed": str(sd),
         "eta": float(et),
     }
+
+    # send session_id if we have one
+    if session_id:
+        payload["session_id"] = session_id
+
     try:
         r = requests.post(f"{BACKEND_URL}/infer", json=payload, timeout=120)
         if r.status_code == 429:
             blank = Image.new("RGB", (w, h), (30, 30, 30))
-            msg = r.json().get("error", "rate limited by backend")
-            return blank, blank, msg
+            out = r.json()
+            # backend also returns session_id on 429
+            new_sid = out.get("session_id", session_id)
+            msg = out.get("error", "rate limited by backend")
+            return blank, blank, msg, new_sid
         r.raise_for_status()
         out = r.json()
         base_img = b64_to_img(out["base_image"])
         lora_img = b64_to_img(out["lora_image"])
-        return base_img, lora_img, out.get("status", "ok")
+        new_sid = out.get("session_id", session_id)
+        return base_img, lora_img, out.get("status", "ok"), new_sid
 
     except ConnectionError:
         blank = Image.new("RGB", (w, h), (120, 50, 50))
-        return blank, blank, "Backend not reachable (connection refused). Start the backend and retry."
+        return blank, blank, "Backend not reachable (connection refused). Start the backend and retry.", session_id
 
     except Timeout:
         blank = Image.new("RGB", (w, h), (120, 50, 50))
-        return blank, blank, "Backend took too long. Please try again later."
+        return blank, blank, "Backend took too long. Please try again later.", session_id
 
     except HTTPError as e:
         blank = Image.new("RGB", (w, h), (120, 50, 50))
-        return blank, blank, f"Backend returned HTTP Error: {e.response.status_code}"
+        return blank, blank, f"Backend returned HTTP Error: {e.response.status_code}", session_id
 
     except Exception as e:
         blank = Image.new("RGB", (w, h), (120, 50, 50))
-        return blank, blank, f"Unknown client error: {e}"
-
+        return blank, blank, f"Unknown client error: {e}", session_id
 
 
 def build_ui():
     with gr.Blocks(title="Astro-Diffusion: Base vs LoRA") as demo:
+        # session state lives in the browser/tab
+        session_state = gr.State(value="")
+
         # header + status
         status_lbl = gr.Markdown("checking backend...")
-        
+
         gr.HTML(
             """
             <style>
@@ -143,7 +152,7 @@ def build_ui():
                 border-radius: 0.5rem;
                 margin-bottom: 0.5rem;
             }
-            .gradio-container label, 
+            .gradio-container label,
             label,
             .gradio-container [class*="label"],
             .gradio-container [class^="svelte-"][class*="label"],
@@ -186,9 +195,7 @@ def build_ui():
         # when user picks a sample, copy it into the textbox
         sample_dropdown.change(fn=lambda x: x, inputs=sample_dropdown, outputs=prompt)
 
-        
         with gr.Row():
-    
             steps = gr.Slider(10, 60, value=cfg.get("num_inference_steps", 30), step=1, label="Steps")
             scale = gr.Slider(1.0, 12.0, value=cfg.get("guidance_scale", 7.5), step=0.5, label="Guidance")
             height = gr.Number(value=min(int(cfg.get("height", 512)), 512), label="Height", minimum=32, maximum=512)
@@ -201,15 +208,16 @@ def build_ui():
         out_lora = gr.Image(label="LoRA Model Output")
         status = gr.Textbox(label="Status", interactive=False)
 
+        # send session_state, receive updated session_state
         btn.click(
             _infer,
-            [prompt, steps, scale, height, width, seed, eta],
-            [out_base, out_lora, status],
+            [prompt, steps, scale, height, width, seed, eta, session_state],
+            [out_base, out_lora, status, session_state],
         )
 
         # ping once when UI loads
         demo.load(fn=check_backend, inputs=None, outputs=status_lbl)
-        
+
     return demo
 
 
