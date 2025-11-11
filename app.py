@@ -122,15 +122,22 @@ def build_ui():
                 margin: 0;
                 font-weight: 700;
                 letter-spacing: 0.01em;
+                font-size: 1.4rem;   /* added */
             }
             .astro-sub {
                 color: #ffffff !important;
                 margin: 0.3rem 0 0 0;
                 font-style: italic;
+                font-size: 0.9rem;
+            }
+            .astro-note {
+                color: #ffffff !important;
+                margin: 0.25rem 0 0.25rem 0;
                 font-size: 0.8rem;
+                opacity: 0.9;
             }
             .astro-link {
-                margin-top: 0.35rem;
+                margin-top: 0.55rem;
             }
             .astro-link a {
                 color: #ffffff !important;
@@ -151,12 +158,6 @@ def build_ui():
                 padding: 0.5rem 0.5rem 0.2rem 0.5rem;
                 border-radius: 0.5rem;
                 margin-bottom: 0.5rem;
-            }
-            .astro-note {
-                color: #ffffff !important;
-                margin: 0.25rem 0 0.25rem 0;
-                font-size: 0.72rem;
-                opacity: 0.9;
             }
             .gradio-container label,
             label,
