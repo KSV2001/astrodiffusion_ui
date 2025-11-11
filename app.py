@@ -1,6 +1,7 @@
 import os, io, base64, time, yaml, requests
 from PIL import Image
 import gradio as gr
+from requests.exceptions import ConnectionError, Timeout, HTTPError
 
 # frontend-only: call your backend (RunPod/pod/etc.)
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:7861")
@@ -16,6 +17,18 @@ cfg = {
     "eta" : 0,
 }
 
+# ---- health check ----
+def check_backend():
+    try:
+        r = requests.get(f"{BACKEND_URL}/health", timeout=5)
+        r.raise_for_status()
+        data = r.json()
+        if data.get("status") == "ok":
+            return "backend=READY"
+    except Exception:
+        pass
+    return "backend=DOWN"
+
 
 def b64_to_img(s: str):
     data = base64.b64decode(s)
@@ -23,19 +36,23 @@ def b64_to_img(s: str):
 
 
 def _infer(p, st, sc, h, w, sd, et):
+    # make sure we always have ints for blank images
+    h = int(h)
+    w = int(w)
+
     payload = {
         "prompt": p,
         "steps": int(st),
         "scale": float(sc),
-        "height": int(h),
-        "width": int(w),
+        "height": h,
+        "width": w,
         "seed": str(sd),
         "eta": float(et),
     }
     try:
         r = requests.post(BACKEND_URL, json=payload, timeout=120)
         if r.status_code == 429:
-            blank = Image.new("RGB", (int(w), int(h)), (30, 30, 30))
+            blank = Image.new("RGB", (w, h), (30, 30, 30))
             msg = r.json().get("error", "rate limited by backend")
             return blank, blank, msg
         r.raise_for_status()
@@ -43,13 +60,30 @@ def _infer(p, st, sc, h, w, sd, et):
         base_img = b64_to_img(out["base_image"])
         lora_img = b64_to_img(out["lora_image"])
         return base_img, lora_img, out.get("status", "ok")
+
+    except ConnectionError:
+        blank = Image.new("RGB", (w, h), (120, 50, 50))
+        return blank, blank, "Backend not reachable (connection refused). Start the backend and retry."
+
+    except Timeout:
+        blank = Image.new("RGB", (w, h), (120, 50, 50))
+        return blank, blank, "Backend took too long. Please try again later."
+
+    except HTTPError as e:
+        blank = Image.new("RGB", (w, h), (120, 50, 50))
+        return blank, blank, f"Backend returned HTTP Error: {e.response.status_code}"
+
     except Exception as e:
-        blank = Image.new("RGB", (int(w), int(h)), (120, 50, 50))
-        return blank, blank, f"Backend error: {e}"
+        blank = Image.new("RGB", (w, h), (120, 50, 50))
+        return blank, blank, f"Unknown client error: {e}"
+
 
 
 def build_ui():
     with gr.Blocks(title="Astro-Diffusion: Base vs LoRA") as demo:
+        # header + status
+        status_lbl = gr.Markdown("checking backend...")
+        
         gr.HTML(
             """
             <style>
@@ -141,6 +175,9 @@ def build_ui():
             [out_base, out_lora, status],
         )
 
+        # ping once when UI loads
+        demo.load(fn=check_backend, inputs=None, outputs=status_lbl)
+        
     return demo
 
 
