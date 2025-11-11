@@ -152,6 +152,12 @@ def build_ui():
                 border-radius: 0.5rem;
                 margin-bottom: 0.5rem;
             }
+            .astro-note {
+                color: #ffffff !important;
+                margin: 0.25rem 0 0.25rem 0;
+                font-size: 0.72rem;
+                opacity: 0.9;
+            }
             .gradio-container label,
             label,
             .gradio-container [class*="label"],
@@ -170,6 +176,7 @@ def build_ui():
                 <div>
                     <h2 class="astro-title">Astro-Diffusion : Base SD vs custom LoRA</h2>
                     <p class="astro-sub">Video generation and more features coming up..!</p>
+                    <p class="astro-note">Shared hourly/daily limits globally for this demo. Please use sparingly.</p>
                     <p class="astro-link">
                         <a href="https://github.com/KSV2001/astro_diffusion" target="_blank" rel="noreferrer noopener">
                             Visit Srivatsava's GitHub repo
