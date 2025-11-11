@@ -8,6 +8,16 @@ BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:7861").rstrip("/")
 print(f"[HF] BACKEND_URL resolved to: {BACKEND_URL}")
 
 # cfg = yaml.safe_load(open("configs/infer.yaml"))
+
+# sample prompts
+SAMPLE_PROMPTS = [
+    "a high-resolution spiral galaxy with blue star-forming arms and a bright yellow core",
+    "a crimson emission nebula with dark dust lanes and scattered newborn stars",
+    "a ringed gas giant with visible storm bands and subtle shadow on rings",
+    "an accretion disk around a black hole with relativistic jets, high contrast",
+]
+
+
 # default UI values if no YAML
 cfg = {
     "height": 512,
@@ -150,12 +160,20 @@ def build_ui():
         )
 
         with gr.Group(elem_classes=["prompt-panel"]):
+            sample_dropdown = gr.Dropdown(
+                choices=SAMPLE_PROMPTS,
+                value=SAMPLE_PROMPTS[0],
+                label="Sample prompts",
+            )
             prompt = gr.Textbox(
-                value="a high-resolution spiral galaxy with blue star-forming arms and a bright yellow core",
+                value=SAMPLE_PROMPTS[0],
                 label="Prompt",
             )
 
+        # when user picks a sample, copy it into the textbox
+        sample_dropdown.change(fn=lambda x: x, inputs=sample_dropdown, outputs=prompt)
 
+        
         with gr.Row():
     
             steps = gr.Slider(10, 60, value=cfg.get("num_inference_steps", 30), step=1, label="Steps")
