@@ -120,6 +120,14 @@ def build_ui():
                 font-style: italic;
                 font-size: 0.8rem;
             }
+            .astro-link {
+                margin-top: 0.35rem;
+            }
+            .astro-link a {
+                color: #ffffff !important;
+                text-decoration: underline;
+                font-size: 0.78rem;
+            }
             .astro-badge {
                 background: #facc15;
                 color: #0f172a;
@@ -153,6 +161,11 @@ def build_ui():
                 <div>
                     <h2 class="astro-title">Astro-Diffusion : Base SD vs custom LoRA</h2>
                     <p class="astro-sub">Video generation and more features coming up..!</p>
+                    <p class="astro-link">
+                        <a href="https://github.com/KSV2001/astro_diffusion" target="_blank" rel="noreferrer noopener">
+                            GitHub repo: KSV2001/astro_diffusion
+                        </a>
+                    </p>
                 </div>
                 <div class="astro-badge">by Srivatsava Kasibhatla</div>
             </div>
