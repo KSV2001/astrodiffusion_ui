@@ -5,6 +5,9 @@ from requests.exceptions import ConnectionError, Timeout, HTTPError
 
 # frontend-only: call your backend (RunPod/pod/etc.)
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:7861").rstrip("/")
+TOKEN = os.getenv("RUNPOD_API_TOKEN", "xxxxx")
+
+headers = {"Authorization": f"Bearer {TOKEN}"}
 print(f"[HF] BACKEND_URL resolved to: {BACKEND_URL}")
 
 # sample prompts
@@ -29,7 +32,7 @@ cfg = {
 # ---- health check ----
 def check_backend():
     try:
-        r = requests.get(f"{BACKEND_URL}/health", timeout=5)
+        r = requests.get(f"{BACKEND_URL}/health", headers = headers, timeout=40)
         r.raise_for_status()
         data = r.json()
         if data.get("status") == "ok":
@@ -64,7 +67,7 @@ def _infer(p, st, sc, h, w, sd, et, session_id):
         payload["session_id"] = session_id
 
     try:
-        r = requests.post(f"{BACKEND_URL}/infer", json=payload, timeout=120)
+        r = requests.post(f"{BACKEND_URL}/infer", headers= headers, json=payload, timeout=300)
         if r.status_code == 429:
             blank = Image.new("RGB", (w, h), (30, 30, 30))
             out = r.json()
