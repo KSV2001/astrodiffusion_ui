@@ -6,7 +6,7 @@ from requests.exceptions import ConnectionError, Timeout, HTTPError
 from typing import Any, Dict
 
 # NEW: import and init limiter
-from ratelimiter import RateLimiter  # ensure ratelimiter.py is in the Space root
+from ratelimits import RateLimiter  # ensure ratelimiter.py is in the Space root
 RL = RateLimiter()
 
 # frontend-only: call your backend (RunPod/pod/etc.)
