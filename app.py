@@ -1,7 +1,13 @@
-import os, io, base64, time, yaml, requests
+# app.py
+import os, io, base64, time, yaml, requests, uuid
 from PIL import Image
 import gradio as gr
 from requests.exceptions import ConnectionError, Timeout, HTTPError
+from typing import Any, Dict
+
+# NEW: import and init limiter
+from ratelimiter import RateLimiter  # ensure ratelimiter.py is in the Space root
+RL = RateLimiter()
 
 # frontend-only: call your backend (RunPod/pod/etc.)
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:7861").rstrip("/")
@@ -28,11 +34,10 @@ cfg = {
     "eta": 0,
 }
 
-
 # ---- health check ----
 def check_backend():
     try:
-        r = requests.get(f"{BACKEND_URL}/health", headers = headers, timeout=40)
+        r = requests.get(f"{BACKEND_URL}/health", headers=headers, timeout=40)
         r.raise_for_status()
         data = r.json()
         if data.get("status") == "ok":
@@ -41,17 +46,45 @@ def check_backend():
         pass
     return "backend=DOWN"
 
-
 def b64_to_img(s: str):
     data = base64.b64decode(s)
     return Image.open(io.BytesIO(data)).convert("RGB")
 
+# NEW: helper to get a stable client key
+def _client_ip(req: gr.Request) -> str:
+    # prefer real IP if present; fallback to client.host or session hash
+    return (
+        getattr(req.state, "real_ip", None)
+        or (req.client.host if req.client else None)
+        or getattr(req, "session_hash", None)
+        or "unknown"
+    )
 
-def _infer(p, st, sc, h, w, sd, et, session_id):
-    # make sure we always have ints for blank images
+# NEW: ensure session dict shape expected by RateLimiter
+def _ensure_session(state: Dict[str, Any]) -> Dict[str, Any]:
+    if not state or not isinstance(state, dict):
+        state = {}
+    state.setdefault("session_id", str(uuid.uuid4()))
+    state.setdefault("count", 0)
+    state.setdefault("started_at", time.time())
+    return state
+
+def _blank(w: int, h: int, rgb=(30, 30, 30)):
+    return Image.new("RGB", (w, h), rgb)
+
+def _infer(p, st, sc, h, w, sd, et, session_state: Dict[str, Any], request: gr.Request):
+    # normalize numeric inputs
     h = int(h)
     w = int(w)
 
+    # NEW: front-gate
+    session_state = _ensure_session(session_state)
+    ip = _client_ip(request)
+    ok, reason = RL.pre_check(ip, session_state)
+    if not ok:
+        return _blank(w, h), _blank(w, h), f"[rate-limit] {reason}", session_state
+
+    start_t = time.time()
     payload = {
         "prompt": p,
         "steps": int(st),
@@ -60,51 +93,62 @@ def _infer(p, st, sc, h, w, sd, et, session_id):
         "width": w,
         "seed": str(sd),
         "eta": float(et),
+        # propagate session id downstream if backend also tracks
+        "session_id": session_state.get("session_id"),
     }
 
-    # send session_id if we have one
-    if session_id:
-        payload["session_id"] = session_id
-
     try:
-        r = requests.post(f"{BACKEND_URL}/infer", headers= headers, json=payload, timeout=300)
+        r = requests.post(f"{BACKEND_URL}/infer", headers=headers, json=payload, timeout=300)
+
+        # backend throttle passthrough
         if r.status_code == 429:
-            blank = Image.new("RGB", (w, h), (30, 30, 30))
+            RL.post_consume(ip, max(0.0, time.time() - start_t))  # still account a tiny cost
             out = r.json()
-            # backend also returns session_id on 429
-            new_sid = out.get("session_id", session_id)
+            new_sid = out.get("session_id", session_state.get("session_id"))
+            session_state["session_id"] = new_sid
             msg = out.get("error", "rate limited by backend")
-            return blank, blank, msg, new_sid
+            return _blank(w, h), _blank(w, h), msg, session_state
+
         r.raise_for_status()
         out = r.json()
+
         base_img = b64_to_img(out["base_image"])
         lora_img = b64_to_img(out["lora_image"])
-        new_sid = out.get("session_id", session_id)
-        return base_img, lora_img, out.get("status", "ok"), new_sid
+
+        # sync session id if backend rotates it
+        new_sid = out.get("session_id", session_state.get("session_id"))
+        session_state["session_id"] = new_sid
+
+        # NEW: only on success, increment session count
+        session_state["count"] = int(session_state.get("count", 0)) + 1
+
+        RL.post_consume(ip, max(0.0, time.time() - start_t))
+        return base_img, lora_img, out.get("status", "ok"), session_state
 
     except ConnectionError:
-        blank = Image.new("RGB", (w, h), (120, 50, 50))
-        return blank, blank, "Backend not reachable (connection refused). Start the backend and retry.", session_id
+        RL.post_consume(ip, max(0.0, time.time() - start_t))
+        return _blank(w, h, (120, 50, 50)), _blank(w, h, (120, 50, 50)), \
+               "Backend not reachable (connection refused). Start the backend and retry.", session_state
 
     except Timeout:
-        blank = Image.new("RGB", (w, h), (120, 50, 50))
-        return blank, blank, "Backend took too long. Please try again later.", session_id
+        RL.post_consume(ip, max(0.0, time.time() - start_t))
+        return _blank(w, h, (120, 50, 50)), _blank(w, h, (120, 50, 50)), \
+               "Backend took too long. Please try again later.", session_state
 
     except HTTPError as e:
-        blank = Image.new("RGB", (w, h), (120, 50, 50))
-        return blank, blank, f"Backend returned HTTP Error: {e.response.status_code}", session_id
+        RL.post_consume(ip, max(0.0, time.time() - start_t))
+        return _blank(w, h, (120, 50, 50)), _blank(w, h, (120, 50, 50)), \
+               f"Backend returned HTTP Error: {e.response.status_code}", session_state
 
     except Exception as e:
-        blank = Image.new("RGB", (w, h), (120, 50, 50))
-        return blank, blank, f"Unknown client error: {e}", session_id
-
+        RL.post_consume(ip, max(0.0, time.time() - start_t))
+        return _blank(w, h, (120, 50, 50)), _blank(w, h, (120, 50, 50)), \
+               f"Unknown client error: {e}", session_state
 
 def build_ui():
     with gr.Blocks(title="Astro-Diffusion: Base vs LoRA") as demo:
-        # session state lives in the browser/tab
-        session_state = gr.State(value="")
+        session_state = gr.State(value={})  # NEW: dict state
 
-        # header + status
         status_lbl = gr.Markdown("checking backend...")
 
         gr.HTML(
@@ -125,7 +169,7 @@ def build_ui():
                 margin: 0;
                 font-weight: 700;
                 letter-spacing: 0.01em;
-                font-size: 1.4rem;   /* added */
+                font-size: 1.4rem;
             }
             .astro-sub {
                 color: #ffffff !important;
@@ -203,7 +247,6 @@ def build_ui():
                 label="Prompt",
             )
 
-        # when user picks a sample, copy it into the textbox
         sample_dropdown.change(fn=lambda x: x, inputs=sample_dropdown, outputs=prompt)
 
         with gr.Row():
@@ -219,18 +262,16 @@ def build_ui():
         out_lora = gr.Image(label="LoRA Model Output")
         status = gr.Textbox(label="Status", interactive=False)
 
-        # send session_state, receive updated session_state
+        # pass session_state; Gradio injects request automatically
         btn.click(
             _infer,
             [prompt, steps, scale, height, width, seed, eta, session_state],
             [out_base, out_lora, status, session_state],
         )
 
-        # ping once when UI loads
         demo.load(fn=check_backend, inputs=None, outputs=status_lbl)
 
     return demo
-
 
 if __name__ == "__main__":
     interface = build_ui()
