@@ -225,6 +225,12 @@ def build_ui():
                     <h2 class="astro-title">Astro-Diffusion : Base SD vs custom LoRA</h2>
                     <p class="astro-sub">Video generation and more features coming up..!</p>
                     <p class="astro-note">Shared hourly/daily limits globally for this demo. Please use sparingly.</p>
+                    <p class="astro-note">
+                        The backend involves cold-start (serverless), so please be patient and refresh the browser until the backend status (shown top left) is READY. 
+                        Some errors may not be related to the model itself and may originate from the hosting platform. 
+                        Also, I can only support the budget for a limited number of demos. Please check out the recorded <a href="https://www.youtube.com/watch?v=mphpXnJV6yo" target="_blank" rel="noreferrer noopener">demo
+                        </a>.
+                    </p>
                     <p class="astro-link">
                         <a href="https://github.com/KSV2001/astro_diffusion" target="_blank" rel="noreferrer noopener">
                             Visit Srivatsava's GitHub repo
